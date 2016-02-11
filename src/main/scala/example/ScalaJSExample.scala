@@ -7,45 +7,78 @@ import org.scalajs.dom.html
 object ScalaJSExample extends js.JSApp {
   def main(): Unit = {
 
+    val g = new GoL("playground")
     val container = dom.document.getElementById("playground")
-    val canvas = dom.document.createElement("canvas").asInstanceOf[html.Canvas]
-    canvas.width = 800
-    canvas.height = 400
-    canvas.style.border = "1px solid black"
-    container.appendChild(canvas)
-    val ctx = canvas.getContext("2d")
-      .asInstanceOf[dom.CanvasRenderingContext2D]
-    var board = new Board(Vector.fill(80 * 40) {
-      false
-    }, 80, 40)
     val start = dom.document.createElement("button").asInstanceOf[html.Button]
     val slider = dom.document.createElement("input").asInstanceOf[html.Input]
     slider.`type` = "range"
     slider.min = "0"
     slider.max = "1000"
+    slider.addEventListener("change", (e: dom.Event) => {
+      g.updateSpeed(1000 - e.target.asInstanceOf[html.Input].value.toInt)
+    })
+
+    start.textContent = "Start"
+    var started = false
+    start.addEventListener("click", (e: dom.MouseEvent) => {
+      started = g.toggleStart()
+      if (started) {
+        start.textContent = "Stop"
+      } else {
+        start.textContent = "Start"
+      }
+    })
+    container.appendChild(start)
+    container.appendChild(slider)
+  }
+
+  class GoL(containerId: String, canvasWidth: Int, canvasHeight: Int) {
+    val container = dom.document.getElementById(containerId).asInstanceOf[html.Div]
+    val canvas = dom.document.createElement("canvas").asInstanceOf[html.Canvas]
+    val grid = dom.document.createElement("canvas").asInstanceOf[html.Canvas]
+    canvas.width = canvasWidth
+    canvas.height = canvasHeight
+    grid.width = canvasWidth
+    grid.height = canvasHeight
+    canvas.style.border = "1px solid black"
+    grid.style.border = "1px solid black"
+    container.style.position = "relative"
+    grid.style.position = "absolute"
+    grid.style.left = "0"
+    container.appendChild(canvas)
+    container.appendChild(grid)
+    val ctx = canvas.getContext("2d")
+      .asInstanceOf[dom.CanvasRenderingContext2D]
+    val gridCtx = grid.getContext("2d")
+      .asInstanceOf[dom.CanvasRenderingContext2D]
+    var board = new Board(Vector.fill(80 * 40) {
+      false
+    }, 80, 40)
+
     var started = false
     var ramId = 0
     var lastUpdate = 0.0
     var updateSpeed = 500
-    slider.addEventListener("change", (e: dom.Event) => {
-      updateSpeed = 1000 - e.target.asInstanceOf[html.Input].value.toInt
-    })
+
+    def updateSpeed(speed: Int) = {
+      updateSpeed = speed
+    }
+
+    def toggleStart() = {
+      started = !started
+      if (started) {
+        update(dom.window.performance.now())
+      } else {
+        dom.window.cancelAnimationFrame(ramId)
+      }
+    }
+
     def redraw(b: Board, ctx: dom.CanvasRenderingContext2D, mouseX: Int, mouseY: Int) = {
       ctx.clearRect(0, 0, canvas.width, canvas.height)
       board.draw(ctx, canvas.width, canvas.height, mouseX, mouseY)
     }
-    start.textContent = "Start"
-    start.addEventListener("click", (e: dom.MouseEvent) => {
-      started = !started
-      if (started) {
-        update(dom.window.performance.now())
-        start.textContent = "Stop"
-      } else {
-        dom.window.cancelAnimationFrame(ramId)
-        start.textContent = "Start"
-      }
-    })
-    canvas.addEventListener("click", (e: dom.MouseEvent) => {
+
+    grid.addEventListener("click", (e: dom.MouseEvent) => {
       val rect = canvas.getBoundingClientRect()
       val x = (e.clientX - rect.left).toInt
       val y = (e.clientY - rect.top).toInt
@@ -53,13 +86,13 @@ object ScalaJSExample extends js.JSApp {
       board = board.toggle(x, y, canvas.width, canvas.height)
       redraw(board, ctx, x, y)
     })
-    canvas.addEventListener("mousemove", (e: dom.MouseEvent) => {
+    grid.addEventListener("mousemove", (e: dom.MouseEvent) => {
       val rect = canvas.getBoundingClientRect()
       val x = (e.clientX - rect.left).toInt
       val y = (e.clientY - rect.top).toInt
       redraw(board, ctx, x, y)
     })
-    canvas.addEventListener("mouseout", (e: dom.MouseEvent) => {
+    grid.addEventListener("mouseout", (e: dom.MouseEvent) => {
       redraw(board, ctx, -999, -999)
     })
 
@@ -71,11 +104,10 @@ object ScalaJSExample extends js.JSApp {
         redraw(board, ctx, -999, -999)
       }
     }
-    container.appendChild(start)
-    container.appendChild(slider)
+
+    board.drawGrid(gridCtx, grid.width, grid.height)
     redraw(board, ctx, -999, -999)
   }
-
 
   class Board(b: Vector[Boolean], w: Int, h: Int) {
     val board = b
@@ -142,8 +174,27 @@ object ScalaJSExample extends js.JSApp {
       new Board(newBoard.toVector, width, height)
     }
 
-    def draw(ctx: dom.CanvasRenderingContext2D, w: Int, h: Int, mouseX: Int, mouseY: Int) = {
+    def drawGrid(ctx: dom.CanvasRenderingContext2D, w: Int, h: Int) = {
+      ctx.beginPath()
       ctx.strokeStyle = "gray"
+      val widthStep = w / width
+      val heightStep = h / height
+      for (
+        x <- 0 until width
+      ) yield {
+        ctx.moveTo(x * widthStep, 0)
+        ctx.lineTo(x * widthStep, h)
+      }
+      for (
+        y <- 0 until height
+      ) yield {
+        ctx.moveTo(0, y * heightStep)
+        ctx.lineTo(w, y * heightStep)
+      }
+      ctx.stroke()
+    }
+
+    def draw(ctx: dom.CanvasRenderingContext2D, w: Int, h: Int, mouseX: Int, mouseY: Int) = {
       ctx.fillStyle = "black"
       ctx.beginPath()
       val widthStep = w / width
@@ -178,19 +229,6 @@ object ScalaJSExample extends js.JSApp {
           heightStep
         )
       }
-      for (
-        x <- 0 until width
-      ) yield {
-        ctx.moveTo(x * widthStep, 0)
-        ctx.lineTo(x * widthStep, h)
-      }
-      for (
-        y <- 0 until height
-      ) yield {
-        ctx.moveTo(0, y * heightStep)
-        ctx.lineTo(w, y * heightStep)
-      }
-      ctx.stroke()
       ctx.closePath()
     }
   }
